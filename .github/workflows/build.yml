@@ -11,33 +11,38 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Doi 21 thanh 17 neu project cua ban dung Minecraft 1.18 - 1.20.4
+      - name: Giai nen zip
+        run: unzip -q player-debug-project.zip -d src
+
       - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Setup Gradle (co cache)
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Cap quyen chay cho gradlew
-        run: chmod +x ./gradlew
+        with:
+          gradle-version: "9.3.0"
 
       - name: Build
-        run: ./gradlew build --no-daemon --console=plain
+        working-directory: src/proj
+        run: gradle build --no-daemon --console=plain
 
-      # Dang file .jar thang len Releases, tai ve la file .jar, khong bi nen zip
-      - name: Tao Release va dang file jar
-        if: success()
+      - name: Gom file jar
+        run: |
+          mkdir -p dist
+          find src/proj -path '*/build/libs/*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' -exec cp {} dist/ \;
+          ls -la dist
+
+      - name: Dang jar len Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }}
-          files: build/libs/*.jar
+          files: dist/*.jar
           fail_on_unmatched_files: true
