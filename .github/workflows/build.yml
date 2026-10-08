@@ -17,12 +17,16 @@ jobs:
 
       - name: Giai nen zip
         run: |
-          ls -la
-          ZIP=$(find . -name '*.zip' -not -path './.git/*' | head -n 1)
-          echo "Tim thay: $ZIP"
-          test -n "$ZIP" || { echo "Khong co file zip nao trong repo"; exit 1; }
-          unzip -q "$ZIP" -d src
-          ls src
+          echo "== Cac file zip trong repo =="
+          find . -name '*.zip' -not -path './.git/*'
+          rm -rf src
+          mkdir src
+          find . -name '*.zip' -not -path './.git/*' -not -path './src/*' | while read -r Z; do
+            echo "Giai nen: $Z"
+            unzip -q -o "$Z" -d "src/$(basename "$Z" .zip)"
+          done
+          echo "== Cau truc sau khi giai nen =="
+          find src -maxdepth 4 | head -n 60
 
       - name: Setup JDK 21
         uses: actions/setup-java@v4
@@ -37,16 +41,29 @@ jobs:
 
       - name: Build
         run: |
-          DIR=$(dirname "$(find src -name settings.gradle | head -n 1)")
+          SETTINGS=$(find src -name 'settings.gradle*' | head -n 1)
+          if [ -z "$SETTINGS" ]; then
+            echo "Khong thay settings.gradle trong src, thu o goc repo..."
+            SETTINGS=$(find . -maxdepth 2 -name 'settings.gradle*' -not -path './.git/*' | head -n 1)
+          fi
+          if [ -z "$SETTINGS" ]; then
+            echo "KHONG tim thay project Gradle. Xem log buoc 'Giai nen zip' de biet repo co gi."
+            exit 1
+          fi
+          DIR=$(dirname "$SETTINGS")
           echo "Build trong: $DIR"
+          echo "BUILD_DIR=$DIR" >> "$GITHUB_ENV"
           cd "$DIR"
           gradle build --no-daemon --console=plain
 
       - name: Gom file jar
         run: |
           mkdir -p dist
-          find src -path '*/build/libs/*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' -exec cp {} dist/ \;
+          find "$BUILD_DIR" -path '*/build/libs/*.jar' \
+            ! -name '*-sources.jar' ! -name '*-dev.jar' ! -name '*-javadoc.jar' \
+            -exec cp {} dist/ \;
           ls -la dist
+          test -n "$(ls -A dist)" || { echo "Khong co file jar nao"; exit 1; }
 
       - name: Dang jar len Releases
         uses: softprops/action-gh-release@v2
