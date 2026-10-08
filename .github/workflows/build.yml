@@ -21,6 +21,7 @@ jobs:
       - name: Giai nen zip va dung project
         run: |
           ZIP=$(ls *.zip | head -1)
+          rm -rf unz build_src
           mkdir -p build_src/src/main/java build_src/src/main/resources
           unzip -q "$ZIP" -d unz
           mv unz/dev unz/x10n unz/com build_src/src/main/java/
@@ -36,14 +37,13 @@ jobs:
           rootProject.name = "coindebug"
           EOT
           cat > gradle.properties <<'EOT'
-          org.gradle.jvmargs=-Xmx2G
+          org.gradle.jvmargs=-Xmx3G
           minecraft_version=1.21.11
-          yarn_mappings=1.21.11+build.1
           loader_version=0.18.1
           mod_version=1.9.2
           EOT
           cat > build.gradle <<'EOT'
-          plugins { id "fabric-loom" version "1.14-SNAPSHOT" }
+          plugins { id "fabric-loom" version "1.14.10" }
           version = project.mod_version
           base { archivesName = "coindebug" }
           repositories {
@@ -52,21 +52,36 @@ jobs:
           }
           dependencies {
               minecraft "com.mojang:minecraft:${project.minecraft_version}"
-              mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+              mappings "net.fabricmc:intermediary:${project.minecraft_version}:v2"
               modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
               modImplementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
           }
           tasks.withType(JavaCompile).configureEach {
               options.release = 21
               options.encoding = "UTF-8"
+              options.compilerArgs += ["-Xmaxerrs", "1000", "-Xlint:none"]
           }
           EOT
 
       - name: Build
         working-directory: build_src
-        run: gradle build --no-daemon
+        run: gradle build --no-daemon --stacktrace 2>&1 | tee ../build.log; exit ${PIPESTATUS[0]}
+
+      - name: Tom tat loi
+        if: failure()
+        run: grep -E "error:|What went wrong" -A2 build.log | head -150
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coindebug-jar
-          path: build_src/build/libs/*.jar
+          path: |
+            build_src/build/libs/*.jar
+            !build_src/build/libs/*-sources.jar
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build.log
