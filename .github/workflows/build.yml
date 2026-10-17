@@ -8,9 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: project
     steps:
       - uses: actions/checkout@v4
 
@@ -19,22 +16,41 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      # dev/bypass and x10n/flatslice are written with intermediary names (class_310 ...),
+      # Find the project root (the folder containing gradlew).
+      # If the project was uploaded as a .zip, unpack it first.
+      - name: Locate project
+        run: |
+          if [ ! -f gradlew ] && [ -z "$(find . -maxdepth 3 -name gradlew -not -path './.git/*' | head -1)" ]; then
+            for z in ./*.zip; do
+              [ -f "$z" ] && unzip -q -o "$z" -d project
+            done
+          fi
+          GW=$(find . -maxdepth 4 -name gradlew -not -path './.git/*' | head -1)
+          if [ -z "$GW" ]; then echo "gradlew not found"; ls -R | head -50; exit 1; fi
+          DIR=$(dirname "$GW")
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          echo "Project dir: $DIR"
+
+      # dev/bypass and x10n/flatslice use intermediary names (class_310 ...),
       # but the project compiles against Yarn, so remap them before building.
       - name: Download Yarn mappings
         run: |
+          cd "$PROJECT_DIR"
           YARN=$(grep '^yarn_mappings=' gradle.properties | cut -d= -f2)
           curl -fsSL -o yarn.jar "https://maven.fabricmc.net/net/fabricmc/yarn/${YARN}/yarn-${YARN}-v2.jar"
 
       - name: Remap intermediary -> Yarn
-        run: python3 tools/remap_intermediary.py yarn.jar src/main/java/dev/bypass src/main/java/x10n
+        run: |
+          cd "$PROJECT_DIR"
+          python3 tools/remap_intermediary.py yarn.jar src/main/java/dev/bypass src/main/java/x10n
 
       - name: Build
         run: |
+          cd "$PROJECT_DIR"
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace clean build
 
       - uses: actions/upload-artifact@v4
         with:
           name: kren-debug
-          path: project/build/libs/*.jar
+          path: ${{ env.PROJECT_DIR }}/build/libs/*.jar
